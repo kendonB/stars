@@ -40,7 +40,7 @@ aggregate.stars = function(x, by, FUN, ..., drop = FALSE, join = st_intersects,
 				else
 					d[[ which_sfc(x) ]]$values
 			
-			unlist(join(x_geoms, by))
+			unlist(join(by, x_geoms))
 		} else { # time:
 			ndims = 1
 			x = st_upfront(x, which_time(x))
