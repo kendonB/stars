@@ -1,3 +1,33 @@
+# reset the offset when x is a sub-raster (i.e, starts at index larger than 1)
+reset_sub = function(x) {
+	d = st_dimensions(x)
+	xy = attr(d, "raster")$dimensions
+	if (all(is.na(xy)))
+		return(x)
+	
+	for (i in xy) {
+		if (d[[ i ]]$from > 1) {
+			if (!is_regular_grid(x))
+				stop("can only write sub-rasters for regular grids")
+			ioff = d[[ i ]]$from - 1
+			d[[ i ]]$offset = d[[ i ]]$offset + ioff * d[[ i ]]$delta
+			d[[ i ]]$to = d[[ i ]]$to - ioff
+			d[[ i ]]$from = 1
+		}
+	}
+	structure(x, dimensions = d)
+}
+
+st_write.stars = function(obj, dsn, layer, ...) {
+	.Deprecated("read_stars") # nocov
+}
+
+
+#' @name write_stars
+#' @export
+write_stars = function(obj, dsn, layer, ...) UseMethod("write_stars")
+
+
 #' write stars object to gdal dataset (typically: to file)
 #' 
 #' @param obj object of class \code{stars}
@@ -8,23 +38,28 @@
 #' @param options character vector with options
 #' @param type character; output binary type, one of: \code{Byte} for eight bit unsigned integer, \code{UInt16} for sixteen bit unsigned integer, \code{Int16} for sixteen bit signed integer, \code{UInt32} for thirty two bit unsigned integer, \code{Int32} for thirty two bit signed integer, \code{Float32} for thirty two bit floating point, \code{Float64} for sixty four bit floating point.
 #' @param NA_value non-NA value that should represent R's \code{NA} value in the target raster file; if set to \code{NA}, it will be ignored.
-#' @name st_write_stars
+#' @param update logical; if \code{TRUE}, an existing file is being updated
+#' @name write_stars
 #' @export
-st_write.stars = function(obj, dsn, layer = 1, ..., driver = detect.driver(dsn), 
-		options = character(0), type = "Float32", NA_value = NA_real_) {
+write_stars.stars = function(obj, dsn, layer = 1, ..., driver = detect.driver(dsn), 
+		options = character(0), type = "Float32", NA_value = NA_real_, update = FALSE) {
 	if (length(obj) > 1 && missing(layer))
 		warning("all but first attribute are ignored")
-	sf::gdal_write(obj[layer], ..., file = dsn, driver = driver, options = options, 
-		type = type, NA_value = NA_value, geotransform = get_geotransform(obj))
+	obj = st_upfront(obj[layer])
+	if (! update) # new file: should not be a sub-array
+		obj = reset_sub(obj)
+	sf::gdal_write(obj, ..., file = dsn, driver = driver, options = options, 
+		type = type, NA_value = NA_value, geotransform = get_geotransform(obj), 
+		update = update)
 	invisible(obj)
 }
 
-#' @name st_write_stars
+#' @name write_stars
 #' @param chunk_size length two integer vector with the number of pixels (x, y) used in the read/write loop; see details.
 #' @param progress logical; if \code{TRUE}, a progress bar is shown
-#' @details the \code{st_write} method for \code{stars_proxy} objects first creates the target file, then updates it sequentially by writing blocks of \code{chunk_size}.
+#' @details \code{write_stars} first creates the target file, then updates it sequentially by writing blocks of \code{chunk_size}.
 #' @export
-st_write.stars_proxy = function(obj, dsn, layer = 1, ..., driver = detect.driver(dsn), 
+write_stars.stars_proxy = function(obj, dsn, layer = 1, ..., driver = detect.driver(dsn), 
 		options = character(0), type = "Float32", NA_value = NA_real_, 
 		chunk_size = c(dim(obj)[1], floor(25e6 / dim(obj)[1])), progress = TRUE) {
 
@@ -34,23 +69,34 @@ st_write.stars_proxy = function(obj, dsn, layer = 1, ..., driver = detect.driver
 		pb = txtProgressBar()
 		setTxtProgressBar(pb, 0)
 	}
-	# create:
-	sf::gdal_write(obj, ..., file = dsn, driver = driver, options = options, 
-		type = type, NA_value = NA_value, geotransform = get_geotransform(obj)) # branches on stars_proxy
 
 	# write chunks:
-	d = dim(obj)
+	dim_obj = dim(obj)
 	di = st_dimensions(obj)
 
-	ncol = ceiling(d[1] / chunk_size[1])
-	nrow = ceiling(d[2] / chunk_size[2])
+	created = FALSE
+
+	ncol = ceiling(dim_obj[1] / chunk_size[1])
+	nrow = ceiling(dim_obj[2] / chunk_size[2])
 	for (col in 1:ncol) { 
 		di[[1]]$from = 1 + (col - 1) * chunk_size[1]
-		di[[1]]$to   = min(col * chunk_size[1], d[1])
+		di[[1]]$to   = min(col * chunk_size[1], dim_obj[1])
 		for (row in 1:nrow) {
 			di[[2]]$from = 1 + (row - 1) * chunk_size[2]
-			di[[2]]$to   = min(row * chunk_size[2], d[2])
-			st_write(st_as_stars(structure(obj, dimensions = di)), dsn = dsn, layer = layer, driver = driver,
+			di[[2]]$to   = min(row * chunk_size[2], dim_obj[2])
+			chunk = st_as_stars(structure(obj, dimensions = di))
+			if (! created) { # create:
+				d = st_dimensions(chunk)
+				d_obj = st_dimensions(obj)
+				d[[1]]$from = d[[2]]$from = 1
+				d[[1]]$to = d_obj[[1]]$to
+				d[[2]]$to = d_obj[[2]]$to
+				# reset dimensions 1/2 to original:
+				sf::gdal_write(structure(obj, dimensions = d), ..., file = dsn, driver = driver, options = options, 
+					type = type, NA_value = NA_value, geotransform = get_geotransform(obj)) # branches on stars_proxy
+			}
+			created = TRUE
+			write_stars(chunk, dsn = dsn, layer = layer, driver = driver,
 				options = options, type = type, update = TRUE)
 			if (progress)
 				setTxtProgressBar(pb, ((col-1) * nrow + row) / (ncol * nrow))

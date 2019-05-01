@@ -20,12 +20,12 @@ dim.stars_proxy = function(x) {
 	dim(st_dimensions(x))
 }
 
-
-
+#' @name plot
 #' @export
+#' @details when plotting a subsetted \code{stars_proxy} object, the default value for argument \code{downsample} will not be computed correctly, and it and has to be set manually.
 plot.stars_proxy = function(x, y, ..., downsample = get_downsample(dim(x))) {
 	x = st_as_stars(x, downsample = downsample, ...)
-	NextMethod()
+	plot(x, ..., downsample = 0)
 }
 
 st_stars_proxy = function(x, dimensions, NA_value = NA_real_) {
@@ -110,17 +110,26 @@ fetch = function(x, downsample = 0, ...) {
 	}
 	rasterio = list(nXOff = dx$from, nYOff = dy$from, nXSize = nXSize, nYSize = nYSize, 
 		nBufXSize = nBufXSize, nBufYSize = nBufYSize)
-	if (!is.null(bands <- d[["band"]])) # we may want to select here
-		rasterio$bands = bands$values %||% bands$from:bands$to
+	if (!is.null(bands <- d[["band"]]) && !is.null(bands$values) && is.numeric(bands$values)) # we want to select here
+		rasterio$bands = bands$values
 
 	# do it:
 	ret = lapply(x, read_stars, RasterIO = rasterio, 
 		NA_value = attr(x, "NA_value") %||% NA_real_, ...)
 
-	if (length(ret) == 1)
+	ret = if (length(ret) == 1)
 		st_redimension(ret[[1]])
 	else
 		do.call(c, lapply(ret, st_redimension))
+	
+	new_dim = st_dimensions(ret)
+	for (dm in setdiff(names(d), xy)) # copy over non x/y dimension values, if present:
+		if (dm %in% names(new_dim))
+			new_dim[[dm]] = d[[dm]]
+#		if (!is.null(v <- d[[dm]]$values))
+#			new_dim[[dm]]$values = v
+
+	st_stars(setNames(ret, names(x)), new_dim)
 }
 
 check_xy_warn = function(call, dimensions) {
@@ -145,7 +154,7 @@ check_xy_warn = function(call, dimensions) {
 #' @param env environment at the data endpoint to resolve objects in
 #' @export
 st_as_stars.stars_proxy = function(.x, ..., downsample = 0, url = attr(.x, "url"), env = parent.frame()) {
-	if (! is.null(url)) { # execute/get remotely:
+	if (! is.null(url)) { # execute/get remotely: # nocov start
 		# if existing, convert call_list to character:
 		attr(.x, "call_list") = lapply(attr(.x, "call_list"), deparse)
 		# push the object to url, then st_as_stars() it there:
@@ -154,7 +163,7 @@ st_as_stars.stars_proxy = function(.x, ..., downsample = 0, url = attr(.x, "url"
 		expr = paste0("st_as_stars(", tempnam, ", url = NULL, downsample=", downsample, ", env = data)") # evaluate in "data" first
 		ret = get_data_url(url, expr)
 		put_data_url(url, tempnam, NULL) # remove the temporary object
-		ret
+		ret # nocov end
 	} else {
 		cl = attr(.x, "call_list")
 		# FIXME: this means we ALLWAYS process after (possibly partial) reading; 
@@ -166,14 +175,14 @@ st_as_stars.stars_proxy = function(.x, ..., downsample = 0, url = attr(.x, "url"
 	}
 }
 
-st_as_stars_proxy = function(x, fname = tempfile(fileext = ".tif"), quiet = TRUE) {
+st_as_stars_proxy = function(x, fname = tempfile(fileext = ".tif"), quiet = TRUE, NA_value = NA_real_) {
 	stopifnot(inherits(x, "stars"))
 	if (inherits(x, "stars_proxy"))
 		return(x)
-	st_write(x, fname)
+	write_stars(x, fname, NA_value = NA_value)
 	if (!quiet)
 		cat(paste("writing to", fname, "\n"))
-	st_stars_proxy(list(fname), st_dimensions(x))
+	st_stars_proxy(list(fname), st_dimensions(x), NA_value = NA_value)
 }
 
 # execute the call list on a stars object
@@ -214,27 +223,35 @@ aperm.stars_proxy = function(a, perm = NULL, ...) {
 	collect(a, match.call(), "aperm", "a")
 }
 
+
 #' @export
-"[.stars_proxy" = function(x, ..., drop = FALSE, crop = TRUE) {
+merge.stars_proxy = function(x, y, ...) {
+	collect(x, match.call(), "merge")
+}
+
+
+#' @export
+"[.stars_proxy" = function(x, i = TRUE, ..., drop = FALSE, crop = TRUE) {
 	mc = match.call()
 	lst = as.list(mc)
 	if (length(lst) < 3)
 		return(x) # 
-	if (as.character(lst[[3]]) != "" && crop) { # i present: do attr selection or bbox now:
-		x = if (is.character(lst[[3]]))
-			st_stars_proxy(unclass(x)[ lst[[3]] ], st_dimensions(x))
-		else {
-			i = as.character(lst[[3]])
-			if (inherits(get(i), c("sf", "sfc", "stars", "bbox")))
-				st_crop(x, get(i), ...)
-			else
-				stop(paste("unrecognized selector:", i))
-		}
-		if (length(lst) == 3 && crop) # we're done
-			return(x)
-		lst[[3]] = TRUE # this one has been handled
+	if (missing(i)) # insert:
+		lst = c(lst[1:2], i = TRUE, lst[-(1:2)])
+	if (inherits(i, c("character", "logical", "numeric"))) {
+		x = st_stars_proxy(unclass(x)[ lst[[3]] ], st_dimensions(x))
+		lst[["i"]] = TRUE # this one has been handled now
+	} else if (crop && inherits(i, c("sf", "sfc", "stars", "bbox"))) {
+		x = st_crop(x, i, ...) # does bounding box cropping only
+		if (inherits(i, c("stars", "bbox")))
+			lst[["i"]] = TRUE # this one has been handled now
 	}
-	collect(x, as.call(lst), "[") # postpone every arguments > 3 to after reading cells
+
+	# return:
+	if (length(lst) == 3 && isTRUE(lst[["i"]])) 
+		x
+	else # still processing the geometries inside the bbox:
+		collect(x, as.call(lst), "[") # postpone every arguments > 3 to after reading cells
 }
 
 # shrink bbox with e * width in each direction
@@ -265,7 +282,7 @@ st_crop.stars_proxy = function(x, y, ..., crop = TRUE, epsilon = 0) {
 		if (epsilon != 0)
 			bb = bb_shrink(bb, epsilon)
 		# FIXME: document how EXACTLY cropping works; https://github.com/hypertidy/tidync/issues/73
-		cr = round(colrow_from_xy(matrix(bb, 2, byrow=TRUE), get_geotransform(dm)) + 0.5)
+		cr = colrow_from_xy(matrix(bb, 2, byrow=TRUE), dm)
 		for (i in seq_along(dm)) {
 			if (names(d[i]) == xd) {
 				dm[[ xd ]]$from = max(1, cr[1, 1])
@@ -287,6 +304,17 @@ st_apply.stars_proxy = function(X, MARGIN, FUN, ...) {
 	collect(X, match.call(), "st_apply", "X")
 }
 
+#' @export
+predict.stars_proxy = function(object, model, ...) {
+	collect(object, match.call(), "predict", "object")
+}
+
+#' @export
+split.stars_proxy = function(x, ...) {
+	collect(x, match.call(), "split")
+}
+
+#nocov start
 get_data_url = function(url, expr = NULL) {
 	if (!requireNamespace("httr", quietly = TRUE)) # GET, POST, PUT
 		stop("package httr required, please install it first") # nocov
@@ -314,3 +342,4 @@ put_data_url = function(url, name, value) {
     value = jsonlite::toJSON(jsonlite::base64_enc(serialize(value, NULL)))
     httr::PUT(url, body = list(name = name, value = value), encode = "json")
 }
+#nocov end

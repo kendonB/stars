@@ -1,6 +1,6 @@
 
-R version 3.5.1 (2018-07-02) -- "Feather Spray"
-Copyright (C) 2018 The R Foundation for Statistical Computing
+R version 3.5.3 (2019-03-11) -- "Great Truth"
+Copyright (C) 2019 The R Foundation for Statistical Computing
 Platform: x86_64-pc-linux-gnu (64-bit)
 
 R is free software and comes with ABSOLUTELY NO WARRANTY.
@@ -17,16 +17,13 @@ Type 'q()' to quit R.
 
 > ## load dependencies
 > library(testthat)
+> suppressPackageStartupMessages(library(stars))
 > 
 > ## test package
 > test_check("stars")
-Loading required package: stars
-Loading required package: abind
-Loading required package: sf
-Linking to GEOS 3.6.2, GDAL 2.2.3, PROJ 4.9.3
 ══ testthat results  ═══════════════════════════════════════════════════════════
-OK: 6 SKIPPED: 0 FAILED: 0
+OK: 55 SKIPPED: 0 FAILED: 0
 > 
 > proc.time()
    user  system elapsed 
-  0.847   0.061   0.871 
+  1.076   0.075   1.115 

@@ -1,47 +1,119 @@
-#' spatially aggregate stars object to feature geometry
+#' spatially or temporally aggregate stars object
 #' 
-#' spatially aggregate stars object to feature geometry
+#' spatially or temporally aggregate stars object, returning a data cube with lower spatial or temporal resolution 
 #' @param x object of class \code{stars} with information to be aggregated
-#' @param by object of class \code{stars} with aggregation geometry
-#' @param FUN aggregation function
-#' @param ... arguments passed on to \code{FUN}
+#' @param by object of class \code{sf}, \code{sfc}, or a time class (\code{Date}, \code{POSIXct}, or \code{PCICt}) with aggregation geometry/time periods; if of class \code{stars}, it is converted to sfc by \code{st_as_sfc(by, as_points = FALSE)}
+#' @param FUN aggregation function, such as \code{mean}
+#' @param ... arguments passed on to \code{FUN}, such as \code{na.rm=TRUE}
 #' @param drop logical; ignored
-#' @param dim integer; geometry dimension that will be aggregated
 #' @param join join function to find matches of x to by
+#' @param rightmost.closed see \link{findInterval}
+#' @param as_points see \link[stars]{st_as_sf}: shall raster pixels be taken as points, or small square polygons?
 #' @export
-aggregate.stars = function(x, by, FUN, ..., drop = FALSE, dim = which_sfc(x)[1], join = st_intersects) {
+aggregate.stars = function(x, by, FUN, ..., drop = FALSE, join = st_intersects, 
+		as_points = any(st_dimension(by) == 2, na.rm = TRUE), rightmost.closed = FALSE) {
 
-	dots = list(...)
-	if (!(inherits(by, "sf") || inherits(by, "sfc"))) 
-		stop("currently, only `by' arguments of class sf or sfc supported")
+	if (inherits(by, "stars"))
+		by = st_as_sfc(by, as_points = FALSE)
 
-	if (length(dim) != 1 || !is.numeric(dim))
-		stop("argument dim should have length 1")
+	classes = c("sf", "sfc", "POSIXct", "Date", "PCICt")
+	if (!inherits(by, classes))
+		stop(paste("currently, only `by' arguments of class", 
+			paste(classes, collapse= ", "), "supported"))
 
-	sfc = st_dimensions(x)[[dim]]$values
+	drop_y = FALSE
+	grps = if (inherits(by, c("sf", "sfc"))) {
+			x = if (has_raster(x)) {
+					ndims = 2
+					drop_y = TRUE
+					st_upfront(x)
+				} else if (has_sfc(x)) {
+					ndims = 1
+					st_upfront(x, which_sfc(x))
+				}
 
-	by = st_geometry(by)
-	i = join(sfc, by)
-	if (any(lengths(i) > 1))
-		warning("assigning multi-matching geometries to first geometry matched in by")
-	i = sapply(i, function(x) x[1])
+			if (inherits(by, "sf"))
+				by = st_geometry(by)
+	
+			# find groups:
+			x_geoms = if (has_raster(x)) {
+					if (identical(join, st_intersection) && utils::packageVersion("sf") >= "0.7-4")
+						x_geoms
+					else
+						st_as_sfc(x, as_points = as_points)
+				} else
+					d[[ which_sfc(x) ]]$values
+			
+			# unlist(join(x_geoms, by))
+			sapply(join(x_geoms, by), function(x) if (length(x)) x[1] else NA)
+		} else { # time:
+			ndims = 1
+			x = st_upfront(x, which_time(x))
+			values = expand_dimensions(x)[[1]]
+			# print(values)
+			i = findInterval(values, by, rightmost.closed = rightmost.closed)
+			i[ i == 0 | i == length(by) ] = NA
+			i
+		}
 
-	# dispatch to stats::aggregate:
-	ui = unlist(i)
+	d = st_dimensions(x)
+	dims = dim(d)
 
-	if (dim != 1)
-		x = aperm(x, c(dim, setdiff(seq_len(dim(x)), dim)))
-
-	aggr = function(.x, .by, .FUN, ...) {
-		ret = rep(NA_real_, length(by))
-		a = aggregate(.x, .by, .FUN, ...)
-		ret[a$Group.1] = a[[2]]
-		ret
+	agr_grps = function(x, grps, uq, FUN, ...) { 
+		do.call(rbind, lapply(uq, function(i) {
+				sel <- which(grps == i)
+				if (!isTRUE(any(sel)))
+					rep(NA_real_, ncol(x))
+				else
+					apply(x[sel, , drop = FALSE], 2, FUN, ...)
+			}
+		))
 	}
 
-	ret = st_apply(x, 2:length(dim(x)), aggr, .by = list(i), .FUN = FUN, ...)
-	d = st_dimensions(ret)
-	d[[1]]$values = by
-	d[[1]]$refsys = st_crs(by)$proj4string
-	structure(ret, dimensions = d)
+	# rearrange:
+	x = structure(x, dimensions = NULL, class = NULL) # unclass
+	newdims = c(prod(dims[1:ndims]), prod(dims[-(1:ndims)]))
+	for (i in seq_along(x))
+		x[[i]] = agr_grps(array(x[[i]], newdims), grps, seq_along(by), FUN, ...)
+
+	# reconstruct dimensions table:
+	d[[1]] = create_dimension(values = by)
+	names(d)[1] = if (inherits(by, c("POSIXct", "Date", "PCICt")))
+			"time"
+		else
+			"geometry" # FIXME: anything better?
+	if (drop_y)
+		d = d[-2] # y
+
+	newdim = c(sfc = length(by), dims[-(1:ndims)])
+	st_stars(lapply(x, array, dim = newdim), dimensions = d)
+}
+
+	# aggregate is done over one or more dimensions
+	# say we have dimensions 1,...,k and we want to aggregate over i,...,j
+	# with 1 <= i <= j <= k; 
+	# let |n| = j-1+1 be the number of dimensions to aggregate over, n
+	# let |m| = k - n be the number of remaining dimensions, m
+	# permute the cube such that the n dimensions are followed by the m
+	# rearrange the cube to a 2D matrix with |i| x ... x |j| rows, and remaining cols
+	# find the grouping of the rows
+	# (rearrange such that groups are together)
+	# for each sub matrix, belonging to a group, do
+	#   apply FUN to every column
+	#   assing the resulting row to the group
+	# now we have |g| rows, with |g| the number of groups
+	# assign each group to the target group of "by"
+	# redimension the matrix such that unaffected dimensions match again
+
+#' @export
+aggregate.stars_proxy = function(x, by, FUN, ...) {
+	if (inherits(by, "stars"))
+		by = st_as_sfc(by, as_points = FALSE)
+	if (!inherits(by, c("sf", "sfc", "sfg")))
+		stop("aggregate.stars_proxy only implemented for spatial `by' arguments")
+	by = st_geometry(by)
+
+	# this assumes the result is small, no need to proxy
+	l = lapply(seq_along(by), function(i) aggregate(st_as_stars(x[by[i]]), by[i], FUN, ...))
+	do.call(c, c(l, along = list(which_sfc(l[[1]]))))
 }

@@ -1,13 +1,15 @@
 ---
-title: 'stars: data model'
+title: '4. stars data model'
 author: "Edzer Pebesma"
-date: "September 28, 2018"
 output:
   html_document:
     toc: true
-    theme: united
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 2
 vignette: >
-  %\VignetteIndexEntry{Stars: data model}
+  %\VignetteIndexEntry{4. stars data model}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -19,6 +21,52 @@ set.seed(13579)
 ```
 
 This vignette explains the data model of `stars` objects, illustrated using artificial and real datasets.
+
+## Stars objects
+
+`stars` objects consist of 
+
+* a (possibly empty) named list of arrays, each having named dimensions
+* an attribute called `dimensions` with a `dimensions` object carrying dimension metadata
+* a class name that includes `stars`
+
+A `dimensions` object is a named list of `dimension` elements, each
+describing the semantics a dimension of the data arrays (space,
+time, type etc). In addition to that, a `dimensions` object has an
+attribute called `raster` of class `stars_raster`, which is a named
+list with three elements:
+
+* `dimensions` length 2 character; the dimension names that constitute a spatial raster (or NA)
+* `affine` length 2 numeric; the two affine parameters of the geotransform (or NA)
+* `curvilinear` a boolean indicating whether a raster is a curvilinear raster (or NA)
+
+The `affine` and `curvilinear` values are only relevant in case of
+raster data, indicated by `dimensions` to have non-NA values.
+
+A `dimension` object describes a _single_ dimension; it is a list with
+named elements
+
+* `from`: (numeric length 1): the start index of the array
+* `to`: (numeric length 1): the end index of the array
+* `offset`: (numeric length 1): the start coordinate (or time) value of the first pixel (i.e., a pixel/cell boundary)
+* `delta`: (numeric length 1): the increment, or cell size
+* `refsys`: (character, or `crs`): object describing the reference system; e.g. the PROJ string, or string `POSIXct` or `PCICt` (for 360 and 365 days/year calendars), or object of class `crs` (containing both EPSG code and proj4string)
+* `point`: (logical length 1): boolean indicating whether cells/pixels refer to areas/periods, or to points/instances (may be NA)
+* `values`: one of 
+    * `NULL`, 
+    * a vector with coordinate values (numeric, `POSIXct`, `PCICt`, or `sfc`), 
+    * an object of class `intervals` (a list with two vectors, `start` and `end`, with interval start- and end-values), or
+    * a matrix with longitudes or latitudes for all cells (in case of curvilinear grids)
+
+Clearly, `offset` and `delta` only apply to _regularly_ discretized
+dimensions, and are `NA` if this is not the case. `from` and
+`to` will usually be 1 and the dimension size, but `from` may
+be larger than 1 in case a regular sub-grid got cut out or was
+cropped. Rectilinear and curvilinear grids need grid values in
+`values`; this can be irregularly _spaced_ coordinate values, or
+coordinate _intervals_ of irregular width, or spatial geometries
+encoded in an `sfc` vector ("list-column"), or a matrix with grid
+cell centre values (longitude or latitude) for curvilinear grids.
 
 ## Grid type
 
@@ -97,8 +145,6 @@ The rotation angle, in degrees, is
 atan2(0.1, 1) * 180 / pi
 ```
 
-### Regular grids: sheared, sheared and rotated
-
 Sheared grids are obtained when the two rotation coefficients, $a_1$ and $a_2$, are unequal:
 ```{r}
 attr(attr(s, "dimensions"), "raster")$affine = c(0.1, 0.2)
@@ -112,23 +158,46 @@ atan2(c(0.1, 0.2), 1) * 180 / pi
 
 ## Rectilinear grids
 
-[Rectilinear grids](https://en.wikipedia.org/wiki/Regular_grid) have orthogonal axes, but do not have congruent (equally sized and shaped) cells: each axes has its own irregular subdivision.
+[Rectilinear grids](https://en.wikipedia.org/wiki/Regular_grid) have orthogonal axes, but do not have congruent (equally sized and shaped) cells: each axis has its own irregular subdivision.
 
+We can define a rectilinear grid by specifying the cell _boundaries_, meaning for every dimension we specify _one more_ value than the dimension size:
 ```{r}
-x = c(0,0.5,1,2,4,5)
-y = c(0.3,0.5,1,2,2.2)
-r = st_as_stars(list(m = m), dimensions = st_dimensions(x = x, y = y))
-r
-#plot(st_as_sf(r, as_points = FALSE), axes = TRUE, nbreaks = 20)
-image(x, y, m, col = sf.colors(21))
-x1 = c(0.25,0.75,1.5,3,4.5)
-y1 = c(0.4,0.75,1.5,2.1)
-image(x1, y1, m, col = sf.colors(21))
+x = c(0, 0.5, 1, 2, 4, 5)  # 6 numbers: boundaries!
+y = c(0.3, 0.5, 1, 2, 2.2) # 5 numbers: boundaries!
+(r = st_as_stars(list(m = m), dimensions = st_dimensions(x = x, y = y)))
+st_bbox(r)
+image(r, axes = TRUE, col = grey((1:20)/20))
 ```
+
+Would we leave out the last value, than `stars` may come up with a _different_ cell boundary for the last cell, as this is now derived from the width of the one-but-last cell:
+```{r}
+x = c(0, 0.5, 1, 2, 4)  # 5 numbers: offsets only!
+y = c(0.3, 0.5, 1, 2)   # 4 numbers: offsets only!
+(r = st_as_stars(list(m = m), dimensions = st_dimensions(x = x, y = y)))
+st_bbox(r)
+```
+
+This is not problematic if cells have a constant width, in which case the boundaries are reduced to an `offset` and `delta` value, irrespective whether an upper boundary is given:
+```{r}
+x = c(0, 1, 2, 3, 4)  # 5 numbers: offsets only!
+y = c(0.5, 1, 1.5, 2)   # 4 numbers: offsets only!
+(r = st_as_stars(list(m = m), dimensions = st_dimensions(x = x, y = y)))
+st_bbox(r)
+```
+
+Alternatively, one can also set the _cell midpoints_ by specifying arguments `cell_midpoints` to the `st_dimensions` call:
+```{r}
+x = st_as_stars(matrix(1:9, 3, 3), 
+                st_dimensions(x = c(1, 2, 3), y = c(2, 3, 10), cell_midpoints = TRUE))
+```
+When the dimension is regular, this results in `offset` being
+shifted back with half a `delta`, or else in intervals derived from
+the distances between cell centers.  This should obviously not be
+done when cell boundaries are specified.
 
 ## Curvilinear grids
 
-Curvilinear grids are grids whose grid lines are not straight. Rather than describing the curvature parametrically, the typical (HDF5 or netcdf) files in which they are found have two raster layers, one with the latitudes and one with the longitudes for every grid cell. Using the GDAL interface, we need to compose a `stars` object from the array and a long and lat matrix. The matrices with longitude and latitude values are stored in the `values` field of their respective dimensions.
+Curvilinear grids are grids whose grid lines are not straight. Rather than describing the curvature parametrically, the typical (HDF5 or NetCDF) files in which they are found have two raster layers, one with the latitudes and one with the longitudes for every grid cell. Using the GDAL interface, we need to compose a `stars` object from the array and a long and lat matrix. The matrices with longitude and latitude values are stored in the `values` field of their respective dimensions.
 
 As an example, we will use a Sentinel 5P dataset available from package `starsdata`; this package can be installed with
 ```{r eval=FALSE}
@@ -145,29 +214,22 @@ EVAL = s5p != ""
 ```
 We can construct the curvilinear `stars` raster by calling `st_as_stars` on three arrays, with data, longitude and latitudes:
 ```{r eval=EVAL}
-lat_ds = paste0("HDF5:\"", s5p, "\"://PRODUCT/latitude")
-lon_ds = paste0("HDF5:\"", s5p, "\"://PRODUCT/longitude")
-nit_ds = paste0("HDF5:\"", s5p, "\"://PRODUCT/SUPPORT_DATA/DETAILED_RESULTS/nitrogendioxide_summed_total_column")
-lat = read_stars(lat_ds)
-lon = read_stars(lon_ds)
-nit = read_stars(nit_ds)
-nit[[1]][nit[[1]] > 9e+36] = NA
-
-ll = setNames(c(lon, lat), c("x", "y"))
-nit.c = st_as_stars(nit, curvilinear = ll)
+nit.c = read_stars(s5p, sub = "//PRODUCT/SUPPORT_DATA/DETAILED_RESULTS/nitrogendioxide_summed_total_column",
+	curvilinear = c("//PRODUCT/longitude", "//PRODUCT/latitude"), driver = NULL)
+nit.c[[1]][nit.c[[1]] > 9e+36] = NA
 st_crs(nit.c) = 4326
 nit.c
 ```
 
 ```{r eval=EVAL}
 plot(nit.c, breaks = "equal", reset = FALSE, axes = TRUE, as_points = TRUE, 
-		 pch = 16,  logz = TRUE)
+		 pch = 16,  logz = TRUE, key.length = 1)
 maps::map('world', add = TRUE, col = 'red')
 ```
 
 ```{r eval=EVAL}
 plot(nit.c, breaks = "equal", reset = FALSE, axes = TRUE, as_points = FALSE, 
-		 border = NA, logz = TRUE)
+		 border = NA, logz = TRUE, key.length = 1)
 maps::map('world', add = TRUE, col = 'red')
 ```
 
@@ -175,13 +237,13 @@ We can downsample the data by
 ```{r eval=EVAL}
 (nit.c = stars:::st_downsample(nit.c, 8))
 plot(nit.c, breaks = "equal", reset = FALSE, axes = TRUE, as_points = TRUE, 
-		 pch = 16, logz = TRUE)
+		 pch = 16, logz = TRUE, key.length = 1)
 maps::map('world', add = TRUE, col = 'red')
 ```
 
 which doesn't look nice, but plotting the cells as polygons looks better:
 ```{r eval=EVAL}
 plot(nit.c, breaks = "equal", reset = FALSE, axes = TRUE, as_points = FALSE, 
-		 border = NA, logz = TRUE)
+		 border = NA, logz = TRUE, key.length = 1)
 maps::map('world', add = TRUE, col = 'red')
 ```

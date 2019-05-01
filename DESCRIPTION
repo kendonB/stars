@@ -1,7 +1,6 @@
 Package: stars
-Title: Scalable, Spatiotemporal Tidy Arrays
-Version: 0.2-1
-Date: 2018-11-24
+Title: Spatiotemporal Arrays, Raster and Vector Data Cubes
+Version: 0.3-1
 Authors@R: 
     c(person(given = "Edzer",
              family = "Pebesma",
@@ -17,10 +16,13 @@ Authors@R:
              role = "ctb"),
       person(given = "Adriano",
              family = "Fantini",
+             role = "ctb"), 
+      person(given = "David", 
+             family = "Blodgett", 
              role = "ctb"))
 Description: Reading, manipulating, writing and plotting
-    spatiotemporal Arrays (including raster data) in R, using GDAL
-    bindings provided by package sf.
+    spatiotemporal arrays (raster and vector data cubes) in 'R', using 'GDAL'
+    bindings provided by 'sf', and 'NetCDF' bindings by 'ncmeta' and 'RNetCDF'.
 License: Apache License
 URL: https://github.com/r-spatial/stars/
 BugReports: https://github.com/r-spatial/stars/issues/
@@ -28,18 +30,21 @@ Additional_repositories: http://pebesma.staff.ifgi.de
 Depends:
     R (>= 3.3.0),
     abind,
-    sf (>= 0.7-2)
+    sf (>= 0.7-3)
 Imports:
     methods,
 	parallel,
     classInt (>= 0.2-2),
-    ncdf4,
-    ncmeta (>= 0.0.3),
     rlang,
     units
 Suggests: 
+    PCICt,
+    RNetCDF (>= 1.8-2),
     covr,
+	digest,
     dplyr (>= 0.7-0),
+    future.apply,
+    ggforce,
     ggplot2,
     ggthemes,
     gstat,
@@ -48,6 +53,7 @@ Suggests:
     knitr,
     lwgeom,
     maps,
+    ncmeta (>= 0.0.3),
 	pbapply,
     plm,
     raster,
@@ -56,18 +62,19 @@ Suggests:
     spacetime,
     testthat,
 	viridis,
-	zoo,
 	xts,
+	zoo,
 	starsdata
 VignetteBuilder: knitr
 Encoding: UTF-8
-RoxygenNote: 6.1.0
+RoxygenNote: 6.1.1
 Collate: 
     'init.R'
     'stars.R'
     'read.R'
     'sf.R'
     'dimensions.R'
+    'values.R'
     'plot.R'
     'tidyverse.R'
     'transform.R'
@@ -83,3 +90,6 @@ Collate:
     'subset.R'
     'warp.R'
     'aggregate.R'
+    'xts.R'
+    'intervals.R'
+    'geom.R'

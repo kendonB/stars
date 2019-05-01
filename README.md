@@ -1,4 +1,4 @@
-# stars: spatiotemporal tidy arrays for R
+# Spatiotemporal Arrays, Raster and Vector Datacubes
 
 [![Build Status](https://travis-ci.org/r-spatial/stars.png?branch=master)](https://travis-ci.org/r-spatial/stars) [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/github/r-spatial/stars?branch=master&svg=true)](https://ci.appveyor.com/project/edzerpebesma/stars)
 [![codecov](https://codecov.io/gh/r-spatial/stars/branch/master/graph/badge.svg)](https://codecov.io/gh/r-spatial/stars)
@@ -9,6 +9,7 @@
 Spatiotemporal data often comes in the form of dense arrays,
 with space and time being array dimensions. Examples include
 
+* raster data
 * socio-economic or demographic data, 
 * environmental variables monitored at fixed stations, 
 * time series of satellite images with multiple spectral bands, 
@@ -16,7 +17,7 @@ with space and time being array dimensions. Examples include
 * climate model results. 
 
 Currently, R does not have infrastructure to handle and analyse such
-arrays easily. Package raster is probably still the most powerful
+arrays easily. Package `raster` is probably still the most powerful
 package for handling this kind of data in memory and on disk, but
 does not address non-raster time series, rasters time series with
 multiple attributes, rasters with mixed type attributes, or spatially
@@ -35,6 +36,8 @@ storage in such workflows.
 * blog posts: [first](http://r-spatial.org/r/2017/11/23/stars1.html),
 [second](https://www.r-spatial.org/r/2018/03/22/stars2.html),
 [third](https://www.r-spatial.org/r/2018/03/23/stars3.html)
+* vignettes: [first](https://r-spatial.github.io/stars/articles/stars1.html), [second](https://r-spatial.github.io/stars/articles/stars2.html), [third](https://r-spatial.github.io/stars/articles/stars3.html), [fourth](https://r-spatial.github.io/stars/articles/stars4.html), [fifth](https://r-spatial.github.io/stars/articles/stars5.html)
+* How `raster` functions map to `stars` functions: [wiki](https://github.com/r-spatial/stars/wiki/How-%60raster%60-functions-map-to-%60stars%60-functions)
 
 ## Proposal
 

@@ -1,4 +1,4 @@
-library(stars)
+suppressPackageStartupMessages(library(stars))
 geomatrix = system.file("tif/geomatrix.tif", package = "stars")
 x = read_stars(geomatrix)
 # can stars reproduce what gdal does, by default?
@@ -7,8 +7,9 @@ y = st_warp(x, x2)
 plot(x2, breaks = "equal", axes=TRUE)
 plot(y, breaks = "equal", axes=TRUE)
 names(x2) = names(y)
-all.equal(x2, y) # yes
+all.equal(x2, y) # yes?
 
+if (FALSE) { # FIXME: to be removed when sf >= 0.7-4 is on CRAN
 # does gdal reproduce with stars template object?
 (x2 = st_warp(x, y, use_gdal = TRUE))
 
@@ -19,7 +20,9 @@ all.equal(x2, y) # yes
 # try with multiple bands:
 tif = system.file("tif/L7_ETMs.tif", package = "stars")
 (x1 = read_stars(tif))
+(x1p = read_stars(tif, proxy = TRUE))
 (x1a = st_warp(x1, crs = st_crs(4326)))
+(x1b = st_warp(x1, x1p, use_gdal = TRUE))
 
 # does gdal reproduce what stars does? Smaller grid:
 (x2 = st_warp(x, crs = st_crs(x), use_gdal = FALSE, cellsize = 3))
@@ -31,4 +34,4 @@ plot(st_as_sfc(st_bbox(x2)), add = TRUE, col = NA, border = 'red')
 #plot(y, breaks = "equal")
 #names(x2) = names(y)
 #all.equal(x2, y) 
-
+}

@@ -2,26 +2,29 @@
 % Please edit documentation in R/aggregate.R
 \name{aggregate.stars}
 \alias{aggregate.stars}
-\title{spatially aggregate stars object to feature geometry}
+\title{spatially or temporally aggregate stars object}
 \usage{
 \method{aggregate}{stars}(x, by, FUN, ..., drop = FALSE,
-  dim = which_sfc(x)[1], join = st_intersects)
+  join = st_intersects, as_points = any(st_dimension(by) == 2, na.rm =
+  TRUE), rightmost.closed = FALSE)
 }
 \arguments{
 \item{x}{object of class \code{stars} with information to be aggregated}
 
-\item{by}{object of class \code{stars} with aggregation geometry}
+\item{by}{object of class \code{sf}, \code{sfc}, or a time class (\code{Date}, \code{POSIXct}, or \code{PCICt}) with aggregation geometry/time periods; if of class \code{stars}, it is converted to sfc by \code{st_as_sfc(by, as_points = FALSE)}}
 
-\item{FUN}{aggregation function}
+\item{FUN}{aggregation function, such as \code{mean}}
 
-\item{...}{arguments passed on to \code{FUN}}
+\item{...}{arguments passed on to \code{FUN}, such as \code{na.rm=TRUE}}
 
 \item{drop}{logical; ignored}
 
-\item{dim}{integer; geometry dimension that will be aggregated}
-
 \item{join}{join function to find matches of x to by}
+
+\item{as_points}{see \link[stars]{st_as_sf}: shall raster pixels be taken as points, or small square polygons?}
+
+\item{rightmost.closed}{see \link{findInterval}}
 }
 \description{
-spatially aggregate stars object to feature geometry
+spatially or temporally aggregate stars object, returning a data cube with lower spatial or temporal resolution
 }
